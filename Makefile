@@ -21,6 +21,12 @@ PNAME := rsgen
 # The name of the shared library
 LIBNAME := randomc
 
+APREFIX := $(PNAME)
+
+ARCHIVE_NC := $(APREFIX).tar
+ARCHIVE_GZ := $(ARCHIVE_NC).gz
+ARCHIVE_XZ := $(ARCHIVE_NC).xz
+
 # we need to define some basic variables
 CPP := c++
 
@@ -51,6 +57,12 @@ CFLAGS := -I$(HDRDIR) -I$(LIBHDRDIR)
 
 LIBLIBS := -shared
 
+# The version of the tar program present in the current system.
+TAR_VERSION := $(shell tar --version | head -n 1 | cut -d ' ' -f 1)
+
+# A flag indicating whether the xz compression utility is not available
+XZ_UNAVAILABLE := $(shell hash xz 2>/dev/null || echo "COMMAND_UNAVAILABLE")
+
 # Kernel name as returned by "uname -s"
 KNAME := $(shell uname -s)
 
@@ -69,6 +81,9 @@ LIBOBJECTS := $(addprefix $(LIBOBJDIR)/,\
 	$(notdir $(LIBSOURCES:$(SRCEXT)=$(OBJEXT))))
 LIBDEPENDENCIES := $(addprefix $(LIBDEPDIR)/,\
 	$(notdir $(LIBSOURCES:$(SRCEXT)=$(DEPEXT))))
+LIBOTHERFILES := $(LIBDIR)/license.txt $(LIBDIR)/ran-instructions.pdf \
+	$(LIBDIR)/readme.txt $(LIBDIR)/ex-ran.cpp $(LIBDIR)/rancombi.cpp \
+	$(LIBDIR)/testirandomx.cpp
 
 HEADERS := $(wildcard $(HDRDIR)/*$(HDREXT))
 SOURCES := $(wildcard $(SRCDIR)/*$(SRCEXT))
@@ -76,8 +91,9 @@ OBJECTS := $(addprefix $(OBJDIR)/,\
 	$(notdir $(SOURCES:$(SRCEXT)=$(OBJEXT))))
 DEPENDENCIES := $(addprefix $(DEPDIR)/,\
 	$(notdir $(SOURCES:$(SRCEXT)=$(DEPEXT))))
+OTHERFILES := COPYING Makefile README
 
-.PHONY: libclean clean
+.PHONY: libclean clean distclean distgz distxz dist
 
 # First and the default target
 
@@ -134,3 +150,58 @@ clean:
 	@rm -vf $(LIBDEPENDENCIES) $(LIBOBJECTS) $(LNAME) \
 		$(DEPENDENCIES) $(OBJECTS) $(ENAME)
 	@echo "$(PNAME) cleaned"
+distclean:
+	@rm -vf $(ARCHIVE_NC) $(ARCHIVE_GZ) $(ARCHIVE_XZ)
+	@echo "distribution archives cleaned"
+
+# If the available tar version is bsd tar, we have to change
+# the syntax of the transformation command
+ifeq ($(TAR_VERSION),bsdtar)
+$(ARCHIVE_NC):
+	@rm -rvf $(LIBDEPDIR).tmp $(DEPDIR).tmp
+	@mv -v $(LIBDEPDIR) $(LIBDEPDIR).tmp
+	@mv -v $(DEPDIR) $(DEPDIR).tmp
+	@mkdir -vp $(LIBDEPDIR) $(DEPDIR)
+	@echo "creating the non-compressed archive $(ARCHIVE_NC)"
+	@tar -s '|^|$(APREFIX)/|' -cvf '$(ARCHIVE_NC)' \
+		$(LIBHEADERS) $(LIBSOURCES) $(LIBDEPDIR) $(LIBOTHERFILES) \
+		$(HEADERS) $(SOURCES) $(DEPDIR) $(OTHERFILES)
+	@rmdir $(LIBDEPDIR) $(DEPDIR)
+	@mv -v $(LIBDEPDIR).tmp $(LIBDEPDIR)
+	@mv -v $(DEPDIR).tmp $(DEPDIR)
+else
+$(ARCHIVE_NC):
+	@rm -rvf $(LIBDEPDIR).tmp $(DEPDIR).tmp
+	@mv -v $(LIBDEPDIR) $(LIBDEPDIR).tmp
+	@mv -v $(DEPDIR) $(DEPDIR).tmp
+	@mkdir -vp $(LIBDEPDIR) $(DEPDIR)
+	@echo "creating the non-compressed archive $(ARCHIVE_NC)"
+	@tar --transform 's|^|$(APREFIX)/|' -cvf '$(ARCHIVE_NC)' \
+		$(LIBHEADERS) $(LIBSOURCES) $(LIBDEPDIR) $(LIBOTHERFILES) \
+		$(HEADERS) $(SOURCES) $(DEPDIR) $(OTHERFILES)
+	@rmdir $(LIBDEPDIR) $(DEPDIR)
+	@mv -v $(LIBDEPDIR).tmp $(LIBDEPDIR)
+	@mv -v $(DEPDIR).tmp $(DEPDIR)
+endif
+
+$(ARCHIVE_GZ): $(ARCHIVE_NC)
+	@echo "compressing the archive"
+	@gzip -v '$(ARCHIVE_NC)'
+
+$(ARCHIVE_XZ): $(ARCHIVE_NC)
+	@echo "compressing the archive"
+	@xz -v '$(ARCHIVE_NC)'
+
+distgz: $(ARCHIVE_GZ)
+	@echo "archive $(ARCHIVE_GZ) created"
+
+distxz: $(ARCHIVE_XZ)
+	@echo "archive $(ARCHIVE_XZ) created"
+
+# If we do not have the xz compression utility,
+# we would like to use the gzip instead
+ifeq ($(XZ_UNAVAILABLE),COMMAND_UNAVAILABLE)
+dist: distgz
+else
+dist: distxz
+endif
