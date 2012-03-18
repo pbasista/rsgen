@@ -1,0 +1,136 @@
+# Copyright 2012 Peter Bašista
+#
+# This file is part of the rsgen
+#
+# rsgen is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# The name of the project
+PNAME := rsgen
+
+# The name of the shared library
+LIBNAME := randomc
+
+# we need to define some basic variables
+CPP := c++
+
+# File extensions
+HDREXT := .h
+SRCEXT := .cpp
+OBJEXT := .o
+DEPEXT := .d
+LIBEXT := .so
+
+LIBDIR := $(LIBNAME)
+
+LIBHDRDIR := $(LIBDIR)/h
+LIBSRCDIR := $(LIBDIR)/src
+LIBOBJDIR := $(LIBDIR)/obj
+LIBDEPDIR := $(LIBDIR)/d
+LNAME := $(LIBDIR)/lib$(LIBNAME)$(LIBEXT)
+
+HDRDIR := h
+SRCDIR := src
+OBJDIR := obj
+DEPDIR := d
+ENAME := $(PNAME)
+
+LIBCFLAGS := -I$(HDRDIR) -I$(LIBHDRDIR) -msse2
+
+CFLAGS := -I$(HDRDIR) -I$(LIBHDRDIR)
+
+LIBLIBS := -shared
+
+# Kernel name as returned by "uname -s"
+KNAME := $(shell uname -s)
+
+# If we are on the Mac OS, we would like to link with the iconv
+ifeq ($(KNAME),Darwin)
+LIBS := -L$(LIBDIR) -l$(LIBNAME) -Wl,-rpath,$(LIBDIR) -liconv
+else
+LIBS := -L$(LIBDIR) -l$(LIBNAME) -Wl,-rpath,$(LIBDIR)
+endif
+
+AFLAGS := -fpic -O3 -Wall -Wextra -Wconversion -pedantic -g
+
+LIBHEADERS := $(wildcard $(LIBHDRDIR)/*$(HDREXT))
+LIBSOURCES := $(wildcard $(LIBSRCDIR)/*$(SRCEXT))
+LIBOBJECTS := $(addprefix $(LIBOBJDIR)/,\
+	$(notdir $(LIBSOURCES:$(SRCEXT)=$(OBJEXT))))
+LIBDEPENDENCIES := $(addprefix $(LIBDEPDIR)/,\
+	$(notdir $(LIBSOURCES:$(SRCEXT)=$(DEPEXT))))
+
+HEADERS := $(wildcard $(HDRDIR)/*$(HDREXT))
+SOURCES := $(wildcard $(SRCDIR)/*$(SRCEXT))
+OBJECTS := $(addprefix $(OBJDIR)/,\
+	$(notdir $(SOURCES:$(SRCEXT)=$(OBJEXT))))
+DEPENDENCIES := $(addprefix $(DEPDIR)/,\
+	$(notdir $(SOURCES:$(SRCEXT)=$(DEPEXT))))
+
+.PHONY: libclean clean
+
+# First and the default target
+
+all: $(LIBDEPENDENCIES) $(LIBOBJDIR) $(LIBOBJECTS) $(LNAME) \
+	$(DEPENDENCIES) $(OBJDIR) $(OBJECTS) $(ENAME)
+	@echo "$(PNAME) has been made"
+
+$(LIBDEPENDENCIES): $(LIBDEPDIR)/%$(DEPEXT): $(LIBSRCDIR)/%$(SRCEXT)
+	@echo "DEP $@"
+	@$(CPP) -MM -MT \
+		'$@ $(addprefix $(LIBOBJDIR)/,\
+		$(subst $(SRCEXT),$(OBJEXT),$(notdir $<)))' \
+		$(LIBCFLAGS) $(AFLAGS) $< -o $@
+
+$(DEPENDENCIES): $(DEPDIR)/%$(DEPEXT): $(SRCDIR)/%$(SRCEXT)
+	@echo "DEP $@"
+	@$(CPP) -MM -MT \
+		'$@ $(addprefix $(OBJDIR)/,\
+		$(subst $(SRCEXT),$(OBJEXT),$(notdir $<)))' \
+		$(CFLAGS) $(AFLAGS) $< -o $@
+
+include $(LIBDEPENDENCIES)
+
+include $(DEPENDENCIES)
+
+$(LIBOBJDIR):
+	@echo "creating object directory for $(LIBNAME)"
+	@mkdir $(LIBOBJDIR)
+
+$(OBJDIR):
+	@echo "creating object directory for $(PNAME)"
+	@mkdir $(OBJDIR)
+
+$(LIBOBJECTS):
+	@echo "CPP $<"
+	@$(CPP) -c $(LIBCFLAGS) $(AFLAGS) $< -o $@
+
+$(OBJECTS):
+	@echo "CPP $<"
+	@$(CPP) -c $(CFLAGS) $(AFLAGS) $< -o $@
+
+$(LNAME): $(LIBOBJECTS)
+	@echo "LD $(LNAME)"
+	@$(CPP) $(LIBLIBS) $(AFLAGS) $(LIBOBJECTS) -o $(LNAME)
+
+$(ENAME): $(OBJECTS)
+	@echo "LD $(ENAME)"
+	@$(CPP) $(LIBS) $(AFLAGS) $(OBJECTS) -o $(ENAME)
+
+libclean:
+	@rm -vf $(LIBDEPENDENCIES) $(LIBOBJECTS) $(LNAME)
+	@echo "$(LIBNAME) cleaned"
+clean:
+	@rm -vf $(LIBDEPENDENCIES) $(LIBOBJECTS) $(LNAME) \
+		$(DEPENDENCIES) $(OBJECTS) $(ENAME)
+	@echo "$(PNAME) cleaned"
