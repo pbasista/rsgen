@@ -73,7 +73,7 @@ else
 LIBS := -L$(LIBDIR) -l$(LIBNAME) -Wl,-rpath,$(LIBDIR)
 endif
 
-AFLAGS := -fpic -O3 -Wall -Wextra -Wconversion -pedantic -g
+AFLAGS := -std=gnu++98 -fpic -O3 -Wall -Wextra -Wconversion -pedantic -g
 
 LIBHEADERS := $(wildcard $(LIBHDRDIR)/*$(HDREXT))
 LIBSOURCES := $(wildcard $(LIBSRCDIR)/*$(SRCEXT))
@@ -100,6 +100,9 @@ OTHERFILES := COPYING Makefile README
 all: $(LIBDEPENDENCIES) $(LIBOBJDIR) $(LIBOBJECTS) $(LNAME) \
 	$(DEPENDENCIES) $(OBJDIR) $(OBJECTS) $(ENAME)
 	@echo "$(PNAME) has been made"
+
+lib: $(LIBDEPENDENCIES) $(LIBOBJDIR) $(LIBOBJECTS) $(LNAME)
+	@echo "library $(LIBNAME) has been made"
 
 $(LIBDEPENDENCIES): $(LIBDEPDIR)/%$(DEPEXT): $(LIBSRCDIR)/%$(SRCEXT)
 	@echo "DEP $@"

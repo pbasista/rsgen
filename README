@@ -1,18 +1,16 @@
 rsgen
 =====
 
-FIXME: Finish this!
-
-A simple utility, which generates random strings ...
+A simple utility, which generates random strings.
 
 This utility is Unicode-aware, which means that
 it understands all the character encodings supported by the iconv
-and it can read the input file on character-by-character basis
-instead of standard byte-by-byte basis.
+and it can generate files containing the random strings made of
+random characters instead of just random bytes.
 
 This application provides a single executable:
-rsgen	computes the inverse probability of matching
-	for the given input file
+rsgen	outputs a file containing the desired number of random characters
+	generated using the specified type of pseudorandom number generator
 
 Requirements:
 -------------
