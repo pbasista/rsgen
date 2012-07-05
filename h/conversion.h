@@ -22,6 +22,8 @@
 /* a feature test macro, which enables the support for large files (> 2 GiB) */
 #define _FILE_OFFSET_BITS 64
 
+#include "randomc.h"
+
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -30,6 +32,7 @@
 #include <iostream>
 #include <iomanip>
 #include <map>
+#include <stdexcept>
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -37,6 +40,33 @@
 /* simple typedefs */
 
 typedef std::map<wchar_t, size_t> occurrences_map;
+
+/* auxiliary exception class */
+
+class my_exception : public std::runtime_error {
+public:
+	my_exception () : std::runtime_error("my exception") {
+	}
+};
+
+/* class */
+
+class rsgen {
+public:
+	static rsgen *instance (const int prng_type);
+	static rsgen *get_instance ();
+	int next ();
+private:
+	rsgen (const int prng_type);
+	rsgen (const rsgen &rhs);
+	rsgen &operator= (const rsgen &rhs);
+	virtual ~rsgen ();
+	static rsgen *my_instance;
+	CRandomMersenne *mprng;
+	int ufd;
+	int prng_type;
+};
+
 
 int text_file_read_buffer (int fd,
 		char *buffer,

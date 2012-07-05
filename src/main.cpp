@@ -7,9 +7,9 @@
  * when generating the random strings.
  */
 #include "conversion.h"
-#include "randomc.h"
 
 #include <cerrno>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -136,15 +136,8 @@ int main (int argc, char **argv) {
 	size_t bytes_to_write = 0;
 	size_t bytes_read = 0;
 	size_t cum_sum = 0;
-	size_t current_wchar_t_occurrences = 0;
 	size_t last_block_characters = 0;
 	size_t retval = 0;
-	/*
-	 * the "probability map" used to determine the character,
-	 * which will be output according to the probability
-	 * of its occurrences in the input text
-	 */
-	size_t *pmap = 0;
 	char c = '\0';
 	char *endptr = NULL;
 	char *input_buffer = NULL;
@@ -168,7 +161,10 @@ int main (int argc, char **argv) {
 	int verbose_flag = 0;
 	int distribution_specification_type = 0;
 	int getopt_retval = 0;
+	double scale_factor = 0;
 	unsigned int i = 0;
+	unsigned int j = 0;
+	unsigned int pseudorandom_number = 0;
 	unsigned long long total_input_characters = 0;
 	/* the conversion descriptor used by the iconv */
 	iconv_t cd = NULL; /* iconv_t is just a typedef for void* */
@@ -181,6 +177,12 @@ int main (int argc, char **argv) {
 	struct stat stat_struct = {};
 	/* a std::map<wchar_t, size_t> of character occurrences */
 	occurrences_map occurrences;
+	/*
+	 * the "probability map" used to determine the character,
+	 * which will be output according to the probability
+	 * of its occurrences in the input text
+	 */
+	std::map<size_t, wchar_t> pmap;
 	/* parsing the command line options */
 	while ((getopt_retval = getopt(argc, argv, "a:s:f:l:g:i:e:vh")) !=
 			(-1)) {
@@ -375,6 +377,7 @@ int main (int argc, char **argv) {
 			perror("iconv_close 1");
 			return (EXIT_FAILURE);
 		}
+		total_input_characters = characters_converted;
 	/* if the user supplied the size of the alphabet */
 	} else if (distribution_specification_type == 2) {
 		/*
@@ -390,6 +393,7 @@ int main (int argc, char **argv) {
 				"occurrences\nof the individual characters!\n";
 			return (EXIT_FAILURE);
 		}
+		total_input_characters = alphabet_size;
 	/* if the user supplied the name of the input file */
 	} else if (distribution_specification_type == 3) {
 		/* we try to open the input file for reading */
@@ -419,7 +423,7 @@ int main (int argc, char **argv) {
 				"allocation error!\n";
 			return (EXIT_FAILURE);
 		}
-		/* here, total_characters_read should be equal to 0 */
+		/* here, total_input_characters should be equal to 0 */
 		do {
 			if ((retval = text_file_read_buffer(ifd,
 							input_buffer,
@@ -442,7 +446,7 @@ int main (int argc, char **argv) {
 					"of the individual characters!\n";
 				return (EXIT_FAILURE);
 			}
-			total_characters_read += characters_converted;
+			total_input_characters += characters_converted;
 		} while (retval == (size_t)(0));
 		if (retval != (size_t)(-1)) {
 			std::cerr << "Error: The last call to the function\n"
@@ -465,55 +469,27 @@ int main (int argc, char **argv) {
 		}
 	}
 	delete[] wbuffer;
-	try {
-		wbuffer = new wchar_t[occurrences.size()];
-	} catch (std::bad_alloc &) {
-		std::cerr << "wbuffer reallocation error!\n";
-		return (EXIT_FAILURE);
-	}
-	i = 0;
 	cum_sum = 0;
 	for (occurrences_map::iterator it = occurrences.begin();
 			it != occurrences.end(); ++it) {
-		wbuffer[i] = it->first;
-		current_wchar_t_occurrences = it->second;
-		it->second = cum_sum;
-		cum_sum += current_wchar_t_occurrences;
-		++i;
+		cum_sum += it->second;
+		pmap[cum_sum] = it->first;
 	}
-	switch (prng_type) {
-		case 1 : /* Mersenne twister */
-			break;
-		case 2 : /* the random() function */
-			srandom((unsigned int)(time(NULL)));
-			break;
-		case 3 : /* the /dev/urandom system file */
-			break;
-		default :
-			std::cerr << "Unknown value for the prng_type (" <<
-				prng_type << ") encountered!\n";
-			return (EXIT_FAILURE);
-	}
-	try {
-		output_wbuffer = new wchar_t[block_size];
-	} catch (std::bad_alloc &) {
-		std::cerr << "output_wbuffer allocation error!\n";
+	if (total_input_characters != cum_sum) {
+		std::cerr << "Something went wrong,\nbecause total number "
+			"of input characters (" << total_input_characters
+			<< ")\nis not equal to the cumulative "
+			"sum of the occurrences\nof all the characters (" <<
+			cum_sum << ").\n";
 		return (EXIT_FAILURE);
 	}
-	/*
-	 * we suppose that the maximum number of bytes that encode
-	 * a single UTF-8 character can never exceed 6
-	 */
-	output_buffer_size = block_size * 6;
-	try {
-		output_buffer = new wchar_t[output_buffer_size];
-	} catch (std::bad_alloc &) {
-		std::cerr << "output_buffer allocation error!\n";
-		return (EXIT_FAILURE);
+	for (std::map<size_t, wchar_t>::iterator it = pmap.begin();
+			it != pmap.end(); ++it) {
+		std::cerr << "pmap[" << it->first << "] == " << it->second << "\n";
 	}
-	write_count = output_length / block_size;
-	write_size = output_length % block_size;
-	last_block_characters = write_size;
+	std::cerr << "pmap.size() == " << pmap.size() << "\n";
+	/* initializing the pseudorandom number generator */
+	rsgen::instance(prng_type);
 	ofd = open(output_filename, O_WRONLY | O_CREAT | O_TRUNC,
 			S_IRUSR | S_IWUSR |
 			S_IRGRP | S_IWGRP |
@@ -527,7 +503,60 @@ int main (int argc, char **argv) {
 		perror("iconv_open 3");
 		return (EXIT_FAILURE);
 	}
+	try {
+		output_wbuffer = new wchar_t[block_size];
+	} catch (std::bad_alloc &) {
+		std::cerr << "output_wbuffer allocation error!\n";
+		return (EXIT_FAILURE);
+	}
+	/*
+	 * we suppose that the maximum number of bytes that encode
+	 * a single UTF-8 character can never exceed 6
+	 */
+	output_buffer_size = block_size * 6;
+	try {
+		output_buffer = new char[output_buffer_size];
+	} catch (std::bad_alloc &) {
+		std::cerr << "output_buffer allocation error!\n";
+		return (EXIT_FAILURE);
+	}
+	std::cerr << "input_buffer_size == " << input_buffer_size << "\n";
+	std::cerr << "output_buffer_size == " << output_buffer_size << "\n";
+	write_count = output_length / block_size;
+	write_size = output_length % block_size;
+	last_block_characters = write_size;
+	scale_factor = (double)(total_input_characters) / (double)(UINT_MAX);
+	std::cerr << "write_count == " << write_count << "\n";
+	std::cerr << "write_size == " << write_size << "\n";
+	std::cerr << "last_block_characters == " << last_block_characters << "\n";
+	std::cerr << "total_input_characters == " << total_input_characters << "\n";
+	std::cerr << "scale_factor == " << scale_factor << "\n";
 	for (i = 0; i < write_count; ++i) {
+		try {
+			for (j = 0; j < block_size; ++j) {
+				/*
+				 * FIXME: we suppose that the total number
+				 * of input characters is not higher
+				 * than the UINT_MAX, roughly.
+				 */
+				pseudorandom_number =
+					(unsigned int)
+					(rsgen::get_instance()->next());
+				/*
+				 * rounding and enforcing
+				 * strictly positive integers
+				 */
+				pseudorandom_number = (unsigned int)
+					((double)(pseudorandom_number) *
+					scale_factor + 1.5);
+				output_wbuffer[j] =
+					pmap.lower_bound
+					(pseudorandom_number)->second;
+			}
+		} catch (...) {
+			std::cerr << "random character selection error!\n";
+			return (EXIT_FAILURE);
+		}
 		if (convert_from_wbuffer(&cd, output_wbuffer, output_buffer,
 				block_size, output_buffer_size,
 				&bytes_to_write) != 0) {
@@ -539,6 +568,34 @@ int main (int argc, char **argv) {
 		}
 	}
 	if (write_size > 0) {
+		/* FIXME: Possibly make a function out of this... */
+		try {
+			for (j = 0; j < last_block_characters; ++j) {
+				/*
+				 * FIXME: we suppose that the total number
+				 * of input characters is not higher
+				 * than the UINT_MAX, roughly.
+				 */
+				pseudorandom_number =
+					(unsigned int)
+					(rsgen::get_instance()->next());
+				std::cerr << "pseudorandom_number == " << pseudorandom_number << "\n";
+				/*
+				 * rounding and enforcing
+				 * strictly positive integers
+				 */
+				pseudorandom_number = (unsigned int)
+					((double)(pseudorandom_number) *
+					scale_factor + 1.5);
+				output_wbuffer[j] =
+					pmap.lower_bound
+					(pseudorandom_number)->second;
+				std::cerr << "output_wbuffer[" << j << "] == " << output_wbuffer[j] << "\n";
+			}
+		} catch (...) {
+			std::cerr << "random character selection error!\n";
+			return (EXIT_FAILURE);
+		}
 		if (convert_from_wbuffer(&cd, output_wbuffer, output_buffer,
 				last_block_characters,
 				output_buffer_size,
@@ -550,6 +607,8 @@ int main (int argc, char **argv) {
 			return (EXIT_FAILURE);
 		}
 	}
+	delete[] output_buffer;
+	delete[] output_wbuffer;
 	if (iconv_close(cd) == (-1)) {
 		perror("iconv_close 3");
 		return (EXIT_FAILURE);

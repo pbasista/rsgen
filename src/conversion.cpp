@@ -21,6 +21,7 @@
 #include "conversion.h"
 
 #include <cerrno>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -58,6 +59,110 @@ unsigned long long compute_gcd (unsigned long long a,
 		b = c;
 	}
 }
+
+/* member functions */
+
+rsgen *rsgen::instance (const int prng_type = 1) {
+	if (my_instance == NULL) {
+		my_instance = new rsgen(prng_type);
+	}
+	return (my_instance);
+}
+
+rsgen *rsgen::get_instance () {
+	return (my_instance);
+}
+
+int rsgen::next () {
+	int pseudorandom_number = 0;
+	ssize_t read_retval = 0;
+	switch (prng_type) {
+		case 1 : /* Mersenne twister */
+			pseudorandom_number = mprng->
+				IRandomX(INT_MIN, INT_MAX);
+			break;
+		case 2 : /* the random() function */
+			pseudorandom_number = (int)(random());
+			break;
+		case 3 : /* the /dev/urandom system file */
+			read_retval = read(ufd,
+					&pseudorandom_number, sizeof (int));
+			/*
+			 * we check whether the read
+			 * has encountered an error
+			 */
+			if (read_retval == (-1)) {
+				perror("rsgen::next(): read");
+				/* resetting the errno */
+				errno = 0;
+				throw my_exception();
+			/* if we have reached the end of the input file */
+			} else if (read_retval == 0) {
+				throw my_exception();
+			}
+			break;
+		default :
+			std::cerr << "Unknown value "
+				"of the supplied prng_type (" <<
+				prng_type << ") encountered!\n";
+			throw my_exception();
+	}
+	return (pseudorandom_number);
+}
+
+rsgen::rsgen (const int prng_type_arg = 1) : prng_type(prng_type_arg) {
+	switch (prng_type) {
+		case 1 : /* Mersenne twister */
+			mprng = new CRandomMersenne((int)(time(NULL)));
+			break;
+		case 2 : /* the random() function */
+			srandom((unsigned int)(time(NULL)));
+			break;
+		case 3 : /* the /dev/urandom system file */
+			/*
+			 * we try to open the /dev/urandom
+			 * system file for reading
+			 */
+			ufd = open("/dev/urandom", O_RDONLY);
+			if (ufd == (-1)) {
+				perror("/dev/urandom: open");
+				throw /* FIXME WHAT? */;
+			}
+			break;
+		default :
+			std::cerr << "Unknown value "
+				"of the supplied prng_type (" <<
+				prng_type << ") encountered!\n";
+			throw my_exception();
+	}
+}
+
+rsgen::rsgen (const rsgen &rhs) {
+}
+
+rsgen &rsgen::operator= (const rsgen &rhs) {
+	return (*this);
+}
+
+rsgen::~rsgen () {
+	/*
+	 * we strongly want to avoid the propagation
+	 * of any exceptions out of the destructor
+	 */
+	try {
+		delete mprng;
+		if (close(ufd) == -1) {
+			perror("/dev/urandom: close");
+		}
+	} catch (...) {
+	}
+}
+
+/* static private member variables */
+
+rsgen *rsgen::my_instance = NULL;
+
+/* regular functions */
 
 /**
  * A function which reads the next 'buffer_size'

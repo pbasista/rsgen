@@ -55,7 +55,9 @@ LIBCFLAGS := -I$(HDRDIR) -I$(LIBHDRDIR) -msse2
 
 CFLAGS := -I$(HDRDIR) -I$(LIBHDRDIR)
 
-LIBLIBS := -shared
+LIBLIBFLAGS := -shared
+
+LIBLIBS :=
 
 # The version of the tar program present in the current system.
 TAR_VERSION := $(shell tar --version | head -n 1 | cut -d ' ' -f 1)
@@ -66,11 +68,12 @@ XZ_UNAVAILABLE := $(shell hash xz 2>/dev/null || echo "COMMAND_UNAVAILABLE")
 # Kernel name as returned by "uname -s"
 KNAME := $(shell uname -s)
 
+LIBFLAGS := -L$(LIBDIR) -Wl,-rpath,$(LIBDIR)
 # If we are on the Mac OS, we would like to link with the iconv
 ifeq ($(KNAME),Darwin)
-LIBS := -L$(LIBDIR) -l$(LIBNAME) -Wl,-rpath,$(LIBDIR) -liconv
+LIBS := -l$(LIBNAME) -liconv
 else
-LIBS := -L$(LIBDIR) -l$(LIBNAME) -Wl,-rpath,$(LIBDIR)
+LIBS := -l$(LIBNAME)
 endif
 
 AFLAGS := -std=gnu++98 -fpic -O3 -Wall -Wextra -Wconversion -pedantic -g
@@ -140,11 +143,11 @@ $(OBJECTS):
 
 $(LNAME): $(LIBOBJECTS)
 	@echo "LD $(LNAME)"
-	@$(CPP) $(LIBLIBS) $(AFLAGS) $(LIBOBJECTS) -o $(LNAME)
+	@$(CPP) $(LIBLIBFLAGS) $(AFLAGS) $(LIBOBJECTS) $(LIBLIBS) -o $(LNAME)
 
 $(ENAME): $(OBJECTS)
 	@echo "LD $(ENAME)"
-	@$(CPP) $(LIBS) $(AFLAGS) $(OBJECTS) -o $(ENAME)
+	@$(CPP) $(LIBFLAGS) $(AFLAGS) $(OBJECTS) $(LIBS) -o $(ENAME)
 
 libclean:
 	@rm -vf $(LIBDEPENDENCIES) $(LIBOBJECTS) $(LNAME)
