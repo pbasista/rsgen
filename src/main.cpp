@@ -21,86 +21,6 @@
 #include <unistd.h>
 
 /**
- * A function, which prepares the output buffer
- * and fills it with the appropriately converted characters
- * from the supplied buffer of wide characters.
- *
- * @param
- * argv0	the argv[0], or the command used to run this program
- *
- * @return	This function always returns zero (0).
- */
-int fill_output_buffer (iconv_t *cd,
-		char *output_buffer,
-		wchar_t *input_buffer,
-		size_t characters_to_output,
-		size_t output_buffer_size,
-		size_t input_buffer_size,
-		size_t *written_bytes,
-		size_t alphabet_size) {
-	unsigned int i = 0;
-	static const char *tocode = "UTF-8";
-	static const char *fromcode = "UCS-4LE";
-	/* the variables used by the iconv */
-	char *inbuf = NULL;
-	char *outbuf = NULL;
-	size_t inbytesleft = 0;
-	size_t outbytesleft = 0;
-	/* the return value of the iconv */
-	size_t retval = 0;
-	for (; i < characters_to_output; ++i) {
-		input_buffer[i] = (wchar_t)(0x0100 +
-			(unsigned long int)(random()) % alphabet_size);
-	}
-	inbuf = (char *)(input_buffer);
-	inbytesleft = input_buffer_size;
-	outbuf = output_buffer;
-	outbytesleft = output_buffer_size;
-	retval = iconv(cd, &inbuf, &inbytesleft,
-			&outbuf, &outbytesleft);
-	(*written_bytes) = output_buffer_size - outbytesleft;
-	/* if the iconv has encountered an error */
-	if ((retval == (size_t)(-1)) && (errno != E2BIG)) {
-		std::cerr << "iconv return value: " << retval << std::endl;
-		perror("fill_buffer: iconv");
-		return (2);
-	}
-	/* we "forget" the E2BIG error */
-	errno = 0;
-	if (iconv_close(cd) == (-1)) {
-		perror("fill_buffer: iconv_close");
-		return (3);
-	}
-	return (0);
-}
-
-int get_file_character_occurrences (int rfd, char *buffer, const char *characters, size_t buffer_length, size_t characters_length) {
-	size_t random_number = 0;
-	ssize_t read_retval = 0;
-	unsigned int i = 0;
-	for (; i < buffer_length; ++i) {
-		read_retval = read(rfd, &random_number, sizeof (size_t));
-		/* we check whether the read has encountered an error */
-		if (read_retval == (-1)) {
-			perror("fill_buffer: read");
-			/* resetting the errno */
-			errno = 0;
-			return (1); /* failure */
-		/* if we have reached the end of the input file */
-		} else if (read_retval == 0) {
-			/*
-			 * Usually, this would be a partial success,
-			 * but here it is a failure!
-			 */
-			return (2);
-		}
-		buffer[i] = characters[random_number % characters_length];
-	}
-	buffer[buffer_length] = '\0';
-	return (0);
-}
-
-/**
  * A function, which prints the short usage text for this program.
  *
  * @param
@@ -134,9 +54,9 @@ int print_help (const char *argv0) {
 		"\t\tusing the uniform distribution.\n"
 		"\t\tThe 'alphabet' is a string representing\n"
 		"\t\tthe alphabet to be used.\n"
-		"\t\tFor example, 'abcdefghijklmnopqrstuvwxyz' is a string\n"
-		"\t\trepresenting the alphabet consisting of\n"
-		"\t\tall the small English letters.\n"
+		"\t\tFor example, 'abcdefghijklmnopqrstuvwxyz'\n"
+		"\t\tis a string representing the alphabet\n"
+		"\t\tconsisting of all the small English letters.\n"
 		"-s <alphabet_size>\tThe output characters will be picked\n"
 		"\t\t\tfrom the part of the Unicode starting\n"
 		"\t\t\tat the character 0x0100 and spanning\n"
@@ -154,8 +74,8 @@ int print_help (const char *argv0) {
 		"\t\tU\t/dev/urandom system file\n"
 		"\t\tThe default PRNG is the Mersenne twister.\n"
 		"-i <file_encoding>\tSpecifies the character encoding\n"
-		"\t\t\tof either the input file\n"
-		"\t\t\tor the input alphabet characters.\n"
+		"\t\t\tof either the input alphabet string\n"
+		"\t\t\tof the input file.\n"
 		"\t\t\tThe default value is UTF-8.\n"
 		"\t\t\tThe valid encodings are all those\n"
 		"\t\t\tsupported by the iconv.\n"
@@ -163,7 +83,8 @@ int print_help (const char *argv0) {
 		"\t\t\tof the output file 'filename'.\n"
 		"\t\t\tThe default value is UTF-8.\n"
 		"\t\t\tThe valid encodings are all those\n"
-		"\t\t\tsupported by the iconv.\n";
+		"\t\t\tsupported by the iconv.\n"
+		"-v\t\tMakes the output more verbose.\n";
 	return (0);
 }
 
@@ -214,29 +135,41 @@ int main (int argc, char **argv) {
 	size_t wchar_t_size = sizeof(wchar_t);
 	size_t bytes_to_write = 0;
 	size_t bytes_read = 0;
+	size_t cum_sum = 0;
+	size_t current_wchar_t_occurrences = 0;
 	size_t last_block_characters = 0;
 	size_t retval = 0;
+	/*
+	 * the "probability map" used to determine the character,
+	 * which will be output according to the probability
+	 * of its occurrences in the input text
+	 */
+	size_t *pmap = 0;
 	char c = '\0';
-	char *inbuf = NULL;
-	char *outbuf = NULL;
 	char *endptr = NULL;
 	char *input_buffer = NULL;
 	char *output_buffer = NULL;
 	const char *input_filename = NULL;
 	const char *input_encoding = "UTF-8";
-	/* character encoding used in the internal text representation */
+	/*
+	 * character encoding used in the internal text representation,
+	 * it will be determined later, according to the size of the wchar_t
+	 */
 	const char *internal_character_encoding = NULL;
 	const char *output_file_encoding = "UTF-8";
 	const char *output_filename = NULL;
 	wchar_t *wbuffer = NULL;
+	wchar_t *output_wbuffer = NULL;
 	int ifd = 0;
 	int ofd = 0;
 	/* The default pseudorandom number generator is the Mersenne twister. */
 	int prng_type = 1;
+	/* indicates whether or not we should be verbose */
+	int verbose_flag = 0;
 	int distribution_specification_type = 0;
 	int getopt_retval = 0;
 	unsigned int i = 0;
-	unsigned long long total_characters_read = 0;
+	unsigned long long total_input_characters = 0;
 	/* the conversion descriptor used by the iconv */
 	iconv_t cd = NULL; /* iconv_t is just a typedef for void* */
 	/*
@@ -254,12 +187,23 @@ int main (int argc, char **argv) {
 		c = (char)(getopt_retval);
 		switch (c) {
 			case 'a':
+				if (distribution_specification_type != 0) {
+					std::cerr << "You can only specify "
+						"one of the parameters "
+						"-a -s or -f.\n\n";
+					return (EXIT_FAILURE);
+				}
 				distribution_specification_type = 1;
 				input_buffer = optarg;
 				input_buffer_size = strlen(optarg);
-				input_buffer[input_buffer_size] = '\0';
 				break;
 			case 's':
+				if (distribution_specification_type != 0) {
+					std::cerr << "You can only specify "
+						"one of the parameters "
+						"-a -s or -f.\n\n";
+					return (EXIT_FAILURE);
+				}
 				distribution_specification_type = 2;
 				alphabet_size = strtoul(optarg, &endptr, 0);
 				if ((*endptr) != '\0') {
@@ -274,6 +218,12 @@ int main (int argc, char **argv) {
 				}
 				break;
 			case 'f':
+				if (distribution_specification_type != 0) {
+					std::cerr << "You can only specify "
+						"one of the parameters "
+						"-a -s or -f.\n\n";
+					return (EXIT_FAILURE);
+				}
 				distribution_specification_type = 3;
 				input_filename = optarg;
 				break;
@@ -311,6 +261,7 @@ int main (int argc, char **argv) {
 				output_file_encoding = optarg;
 				break;
 			case 'v':
+				verbose_flag = 1;
 				//FIXME: Verbosity?
 				break;
 			case 'h':
@@ -318,7 +269,7 @@ int main (int argc, char **argv) {
 				return (EXIT_SUCCESS);
 			case '?':
 				//FIXME: Remove print usage?
-				print_usage(argv[0]);
+//				print_usage(argv[0]);
 				return (EXIT_FAILURE);
 		}
 	}
@@ -329,6 +280,7 @@ int main (int argc, char **argv) {
 		print_usage(argv[0]);
 		return (EXIT_FAILURE);
 	} else if (distribution_specification_type == 1) {
+		/* FIXME: Is it true that this can never happen? */
 		if (input_buffer_size == 0) {
 			std::cerr << "<alphabet>: '" << input_buffer <<
 				"' must contain at least one character!\n";
@@ -388,6 +340,10 @@ int main (int argc, char **argv) {
 	}
 	std::cout << "Random string generator (rsgen)" <<
 		std::endl << std::endl;
+	if (verbose_flag != 0) {
+		std::clog << "sizeof (wchar_t) == " << wchar_t_size <<
+			std::endl << std::endl;
+	}
 	/* if the user supplied the alphabet string */
 	if (distribution_specification_type == 1) {
 		/* we create the desired conversion descriptor */
@@ -403,8 +359,8 @@ int main (int argc, char **argv) {
 			std::cerr << "wbuffer allocation error!\n";
 			return (EXIT_FAILURE);
 		}
-		if (convert_buffer(&cd, input_buffer, input_buffer_size,
-					wbuffer, wbuffer_size,
+		if (convert_to_wbuffer(&cd, input_buffer, wbuffer,
+					input_buffer_size, wbuffer_size,
 					&characters_converted) > 0) {
 			std::cerr << "Character conversion error!\n";
 			return (EXIT_FAILURE);
@@ -427,6 +383,12 @@ int main (int argc, char **argv) {
 		 */
 		for (i = 0; i < alphabet_size; ++i) {
 			wbuffer[i] = (wchar_t)(0x0100 + i);
+		}
+		if (add_character_occurrences(occurrences,
+					wbuffer, alphabet_size) > 0) {
+			std::cerr << "Could not determine the numbers of "
+				"occurrences\nof the individual characters!\n";
+			return (EXIT_FAILURE);
 		}
 	/* if the user supplied the name of the input file */
 	} else if (distribution_specification_type == 3) {
@@ -457,17 +419,18 @@ int main (int argc, char **argv) {
 				"allocation error!\n";
 			return (EXIT_FAILURE);
 		}
+		/* here, total_characters_read should be equal to 0 */
 		do {
 			if ((retval = text_file_read_buffer(ifd,
-							input_buffer_size,
 							input_buffer,
+							input_buffer_size,
 							&bytes_read)) > 0) {
 				std::cerr <<
 					"Could not read the input file!\n";
 				return (EXIT_FAILURE);
 			}
-			if (convert_buffer(&cd, input_buffer, bytes_read,
-						wbuffer, wbuffer_size,
+			if (convert_to_wbuffer(&cd, input_buffer, wbuffer,
+						bytes_read, wbuffer_size,
 						&characters_converted) > 0) {
 				std::cerr << "Character conversion error!\n";
 				return (EXIT_FAILURE);
@@ -485,9 +448,12 @@ int main (int argc, char **argv) {
 			std::cerr << "Error: The last call to the function\n"
 				"text_file_read_buffer"
 				" has not been successful.\n";
-			return (6);
+			return (EXIT_FAILURE);
 		}
-		std::cout << "Successfully computed!\n\n";
+		if (verbose_flag != 0) {
+			std::clog << "Input file has been "
+				"successfully read!\n\n";
+		}
 		delete[] input_buffer;
 		if (iconv_close(cd) == (-1)) {
 			perror("iconv_close 2");
@@ -505,9 +471,49 @@ int main (int argc, char **argv) {
 		std::cerr << "wbuffer reallocation error!\n";
 		return (EXIT_FAILURE);
 	}
+	i = 0;
+	cum_sum = 0;
 	for (occurrences_map::iterator it = occurrences.begin();
 			it != occurrences.end(); ++it) {
+		wbuffer[i] = it->first;
+		current_wchar_t_occurrences = it->second;
+		it->second = cum_sum;
+		cum_sum += current_wchar_t_occurrences;
+		++i;
 	}
+	switch (prng_type) {
+		case 1 : /* Mersenne twister */
+			break;
+		case 2 : /* the random() function */
+			srandom((unsigned int)(time(NULL)));
+			break;
+		case 3 : /* the /dev/urandom system file */
+			break;
+		default :
+			std::cerr << "Unknown value for the prng_type (" <<
+				prng_type << ") encountered!\n";
+			return (EXIT_FAILURE);
+	}
+	try {
+		output_wbuffer = new wchar_t[block_size];
+	} catch (std::bad_alloc &) {
+		std::cerr << "output_wbuffer allocation error!\n";
+		return (EXIT_FAILURE);
+	}
+	/*
+	 * we suppose that the maximum number of bytes that encode
+	 * a single UTF-8 character can never exceed 6
+	 */
+	output_buffer_size = block_size * 6;
+	try {
+		output_buffer = new wchar_t[output_buffer_size];
+	} catch (std::bad_alloc &) {
+		std::cerr << "output_buffer allocation error!\n";
+		return (EXIT_FAILURE);
+	}
+	write_count = output_length / block_size;
+	write_size = output_length % block_size;
+	last_block_characters = write_size;
 	ofd = open(output_filename, O_WRONLY | O_CREAT | O_TRUNC,
 			S_IRUSR | S_IWUSR |
 			S_IRGRP | S_IWGRP |
@@ -516,26 +522,15 @@ int main (int argc, char **argv) {
 		perror("output_filename: open");
 		return (EXIT_FAILURE);
 	}
-	input_buffer_size = block_size * sizeof (wchar_t);
-	/*
-	 * we suppose that the maximum number of bytes that encode
-	 * a single UTF-8 character can never exceed 6
-	 */
-	output_buffer_size = block_size * 6;
-	/* FIXME: block_size is correct here? It should be something more like the number of characters ... */
-	write_count = output_length / block_size;
-	write_size = output_length % block_size;
-	last_block_characters = write_size;
 	if ((cd = iconv_open(output_file_encoding,
 			internal_character_encoding)) == (iconv_t)(-1)) {
 		perror("iconv_open 3");
 		return (EXIT_FAILURE);
 	}
 	for (i = 0; i < write_count; ++i) {
-		srandom((unsigned int)(time(NULL)));
-		if (fill_output_buffer(&cd, output_buffer, wbuffer, block_size,
-				output_buffer_size, input_buffer_size,
-				&bytes_to_write, alphabet_size) != 0) {
+		if (convert_from_wbuffer(&cd, output_wbuffer, output_buffer,
+				block_size, output_buffer_size,
+				&bytes_to_write) != 0) {
 			return (EXIT_FAILURE);
 		}
 		if (write(ofd, output_buffer, bytes_to_write) == (-1)) {
@@ -544,11 +539,10 @@ int main (int argc, char **argv) {
 		}
 	}
 	if (write_size > 0) {
-		if (fill_output_buffer(&cd, output_buffer, wbuffer,
+		if (convert_from_wbuffer(&cd, output_wbuffer, output_buffer,
 				last_block_characters,
 				output_buffer_size,
-				last_block_characters * sizeof (wchar_t),
-				&bytes_to_write, alphabet_size) != 0) {
+				&bytes_to_write) != 0) {
 			return (EXIT_FAILURE);
 		}
 		if (write(ofd, output_buffer, bytes_to_write) == (-1)) {

@@ -17,6 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+//		input_buffer[i] = (wchar_t)(0x0100 + (unsigned long int)(random()) % alphabet_size);
 #include "conversion.h"
 
 #include <cerrno>
@@ -66,9 +67,9 @@ unsigned long long compute_gcd (unsigned long long a,
  * @param
  * fd	the file descriptor from which the buffer will be read
  * @param
- * buffer_size	the desired number of bytes to be read
- * @param
  * buffer	the buffer into which the next parts of the file will be read
+ * @param
+ * buffer_size	the desired number of bytes to be read
  * @param
  * bytes_read	when this function returns, this variable will be set
  * 		to the number of bytes, which has actually been read
@@ -82,8 +83,8 @@ unsigned long long compute_gcd (unsigned long long a,
  * 		Otherwise, in case of any error, this function returns (1).
  */
 int text_file_read_buffer (int fd,
-		size_t buffer_size,
 		char *buffer,
+		size_t buffer_size,
 		size_t *bytes_read) {
 	ssize_t read_retval = read(fd, buffer, buffer_size);
 	/* we check whether the read has encountered an error */
@@ -102,6 +103,75 @@ int text_file_read_buffer (int fd,
 }
 
 /**
+ * A function, which prepares the output buffer
+ * and fills it with the appropriately converted characters
+ * from the supplied buffer of wide characters.
+ *
+ * @param
+ * cd		the iconv conversion descriptor used by the iconv
+ * 		for character conversion
+ * @param
+ * input_buffer	the input buffer of wide characters, which will be converted
+ * 		and written out to the output buffer of bytes
+ * @param
+ * output_buffer	the output buffer, which will be filled
+ * 			with bytes corresponding to the converted characters
+ * 			present in the input_buffer
+ * @param
+ * input_buffer_size	the number of wchar_t characters in the input_buffer
+ * @param
+ * output_buffer_size	the number of bytes in the output_buffer
+ * @param
+ * written_bytes	the number of bytes written into the output_buffer
+ * 			during this function's call
+ *
+ * @return	If all the characters in the input_buffer have been
+ * 		successfully converted, this function returns zero (0).
+ * 		If there was not enough space in the output_buffer,
+ * 		this function returns (-1).
+ * 		Otherwise, in case of any error,
+ * 		a positive error number is returned.
+ */
+int convert_from_wbuffer (iconv_t *cd,
+		wchar_t *input_buffer,
+		char *output_buffer,
+		size_t input_buffer_size,
+		size_t output_buffer_size,
+		size_t *written_bytes) {
+	/* the variables used by the iconv */
+	char *inbuf = (char *)(input_buffer);
+	char *outbuf = output_buffer;
+	size_t inbytesleft = input_buffer_size * sizeof (wchar_t);
+	size_t outbytesleft = output_buffer_size;
+	size_t iconv_retval = iconv(cd, &inbuf, &inbytesleft,
+			&outbuf, &outbytesleft);
+	/*
+	 * computing the number of bytes,
+	 * which have just been written to the output_buffer
+	 */
+	(*written_bytes) = output_buffer_size - outbytesleft;
+	/* if the iconv has encountered an error */
+	if ((iconv_retval == (size_t)(-1)) && (errno != E2BIG)) {
+		std::cerr << "iconv return value: " <<
+			iconv_retval << std::endl;
+		perror("convert_from_wbuffer: iconv");
+		return (1); /* failure */
+	/* if there was not enough space in the output_buffer */
+	} else if ((iconv_retval == (size_t)(-1)) && (errno == E2BIG)) {
+		/* resetting the errno */
+		errno = 0;
+		return (-1); /* partial success */
+	} else if (iconv_retval > 0) {
+		std::cerr << "convert_from_wbuffer: iconv "
+			"converted " << iconv_retval << " characters\n"
+			"in a nonreversible way!\n";
+		return (2); /* possible failure */
+	} else { /* iconv_retval == 0 */
+		return (0); /* success */
+	}
+}
+
+/**
  * A function which reads the 'buffer_size' bytes from the input buffer
  * of standard characters and converts them using the iconv function
  * initialized by the provided conversion descriptor to the wide characters
@@ -110,68 +180,63 @@ int text_file_read_buffer (int fd,
  * @param
  * cd	the iconv conversion descriptor used for the character conversion
  * @param
- * buffer	the input buffer of standard characters
+ * input_buffer	the input buffer of standard characters
  * @param
- * buffer_size	the number of bytes in the input buffer
+ * output_buffer	the output buffer of wide characters
  * @param
- * wbuffer	the output buffer of wide characters
+ * input_buffer_size	the number of bytes in the input buffer
  * @param
- * wbuffer_size	the number of characters in the output buffer
+ * output_buffer_size	the number of characters in the output buffer
  * @param
- * characters_read	when this function returns, this variable will be set
- * 			to the number of characters, which has actually been read
- * 			from the specified input buffer
+ * written_characters	when this function returns, this variable will be set
+ * 			to the number of characters, which has actually been
+ * 			written to the specified output buffer
  *
  * @return	If the entire input buffer has been successfully converted,
  * 		this function returns zero.
- * 		Otherwise, a positive error number is returned.
+ * 		If there was not enough space in the output_buffer,
+ * 		this function returns (-1).
+ * 		Otherwise, in case of any error,
+ * 		a positive error number is returned.
  */
-int convert_buffer (iconv_t *cd,
-		char *buffer,
-		size_t buffer_size,
-		wchar_t *wbuffer,
-		size_t wbuffer_size,
-		size_t *characters_read) {
-	char *inbuf = buffer;
-	char *outbuf = (char *)(wbuffer);
-	size_t inbytesleft = buffer_size;
-	size_t outbytesleft = wbuffer_size * sizeof (wchar_t);
+int convert_to_wbuffer (iconv_t *cd,
+		char *input_buffer,
+		wchar_t *output_buffer,
+		size_t input_buffer_size,
+		size_t output_buffer_size,
+		size_t *written_characters) {
+	char *inbuf = input_buffer;
+	char *outbuf = (char *)(output_buffer);
+	size_t inbytesleft = input_buffer_size;
+	size_t outbytesleft = output_buffer_size * sizeof (wchar_t);
 	size_t outbytesleft_at_start = outbytesleft;
-	size_t retval = 0;
-	/*
-	 * we try to use iconv to convert the characters
-	 * in the input buffer to the characters in the output buffer
-	 */
-	retval = iconv((*cd), &inbuf, &inbytesleft,
+	size_t iconv_retval = iconv((*cd), &inbuf, &inbytesleft,
 			&outbuf, &outbytesleft);
-	/* if the iconv has encountered an error */
-	if (retval == (size_t)(-1)) {
-		perror("text_file_convert_buffer: iconv");
-		/* resetting the errno */
-		errno = 0;
-		return (1);
-	} else if (retval > 0) {
-		std::cerr << "text_file_convert_buffer: iconv "
-			"converted " << retval << " characters\n"
-			"in a nonreversible way!\n";
-		return (2);
-	} else if (outbytesleft == 0) {
-		/*
-		 * all the characters expected to be read
-		 * from the input buffer have already been read
-		 */
-	} else if (inbytesleft > 0) {
-		std::cerr << "text_file_convert_buffer: iconv could not "
-			"convert " << inbytesleft << " input bytes!\n";
-		return (3);
-	}
 	/*
 	 * now we compute the number of characters,
-	 * which have just been converted from the input buffer
+	 * which have just been written to the output_buffer
 	 */
-	(*characters_read) = (outbytesleft_at_start -
+	(*written_characters) = (outbytesleft_at_start -
 			outbytesleft) / sizeof (wchar_t);
-	return (0);
+	/* if the iconv has encountered an error */
+	if ((iconv_retval == (size_t)(-1)) && (errno != E2BIG)) {
+		std::cerr << "iconv return value: " <<
+			iconv_retval << std::endl;
+		perror("convert_to_wbuffer: iconv");
+		return (1); /* failure */
+	/* if there was not enough space in the output_buffer */
+	} else if ((iconv_retval == (size_t)(-1)) && (errno == E2BIG)) {
+		/* resetting the errno */
+		errno = 0;
+		return (-1); /* partial success */
+	} else if (iconv_retval > 0) {
+		std::cerr << "convert_to_wbuffer: iconv "
+			"converted " << iconv_retval << " characters\n"
+			"in a nonreversible way!\n";
+		return (2); /* possible failure */
+	} else { /* iconv_retval == 0 */
+		return (0); /* success */
+	}
 }
 
 /**

@@ -39,15 +39,21 @@
 typedef std::map<wchar_t, size_t> occurrences_map;
 
 int text_file_read_buffer (int fd,
-		size_t buffer_size,
 		char *buffer,
+		size_t buffer_size,
 		size_t *bytes_read);
-int convert_buffer (iconv_t *cd,
-		char *buffer,
-		size_t buffer_size,
-		wchar_t *wbuffer,
-		size_t wbuffer_size,
-		size_t *characters_read);
+int convert_from_wbuffer (iconv_t *cd,
+		wchar_t *input_buffer,
+		char *output_buffer,
+		size_t input_buffer_size,
+		size_t output_buffer_size,
+		size_t *written_bytes);
+int convert_to_wbuffer (iconv_t *cd,
+		char *input_buffer,
+		wchar_t *output_buffer,
+		size_t input_buffer_size,
+		size_t output_buffer_size,
+		size_t *written_characters);
 int add_character_occurrences(occurrences_map &occurrences,
 		wchar_t *wbuffer,
 		size_t wbuffer_size);
