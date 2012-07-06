@@ -1,17 +1,17 @@
 rsgen
 =====
 
-A simple utility, which generates pseudorandom strings.
+A simple utility which generates pseudorandom strings.
 
 This utility is Unicode-aware, which means that
 it understands all the character encodings supported by the iconv
-and it can generate files containing the random strings made of
-random characters instead of just random bytes.
+and it can generate files containing the pseudorandom strings made of
+pseudorandom characters instead of just pseudorandom bytes.
 
 Available pseudorandom number generators (PRNGs) are:
 
 	1. Mersenne twister (as implemented by the randomc library,
-			http://www.agner.org/random/)
+				http://www.agner.org/random/)
 	2. random() function
 	3. /dev/urandom system file
 
@@ -20,8 +20,9 @@ the user-supplied characters or a continuous subset
 of Unicode starting at the character 0x0100.
 
 This application provides a single executable:
-rsgen	outputs a file containing the desired number of random characters
-	generated using the specified type of pseudorandom number generator
+rsgen	outputs a file containing the desired number
+	of pseudorandom characters generated using
+	the specified type of pseudorandom number generator
 
 Requirements:
 -------------
