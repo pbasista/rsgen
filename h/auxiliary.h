@@ -17,6 +17,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/**
+ * @file
+ * The pseudorandom string generator auxiliary functions.
+ * This file contains the declarations of functions,
+ * which are used to handle the buffering and character
+ * conversion used when generating the random strings.
+ */
+
 /* this feature test macro enables the st_blksize member of the struct stat */
 #define _XOPEN_SOURCE 500
 /* a feature test macro, which enables the support for large files (> 2 GiB) */

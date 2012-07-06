@@ -17,6 +17,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/**
+ * @file
+ * The pseudorandom string generator auxiliary functions.
+ * This file contains the implementation of functions,
+ * which are used to handle the buffering and character
+ * conversion used when generating the random strings.
+ */
+
 #include "auxiliary.h"
 
 #include <cerrno>
