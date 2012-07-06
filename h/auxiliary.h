@@ -40,6 +40,7 @@
 /* simple typedefs */
 
 typedef std::map<wchar_t, size_t> occurrences_map;
+typedef std::map<size_t, wchar_t> probability_map;
 
 /* auxiliary exception class */
 
@@ -55,7 +56,7 @@ class rsgen {
 public:
 	static rsgen *instance (const int prng_type);
 	static rsgen *get_instance ();
-	int next ();
+	unsigned int next ();
 private:
 	rsgen (const int prng_type);
 	rsgen (const rsgen &rhs);
@@ -87,3 +88,7 @@ int convert_to_wbuffer (iconv_t *cd,
 int add_character_occurrences(occurrences_map &occurrences,
 		wchar_t *wbuffer,
 		size_t wbuffer_size);
+int fill_output_wbuffer (wchar_t *wbuffer,
+		size_t wbuffer_size,
+		const probability_map &pmap,
+		double scale_factor);

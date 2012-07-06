@@ -17,8 +17,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-//		input_buffer[i] = (wchar_t)(0x0100 + (unsigned long int)(random()) % alphabet_size);
-#include "conversion.h"
+#include "auxiliary.h"
 
 #include <cerrno>
 #include <climits>
@@ -33,38 +32,12 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-/* auxiliary functions */
-
-/**
- * A function which computes the greatest common divisor
- * of the two numbers provided.
- *
- * @param
- * a	the first number
- * @param
- * a	the second number
- *
- * @return	This function always returns the greatest common divisor
- * 		of the two provided numbers 'a' and 'b'.
- */
-unsigned long long compute_gcd (unsigned long long a,
-		unsigned long long b) {
-	unsigned long long c = 0;
-	for (;;) {
-		c = a % b;
-		if (c == 0) {
-			return (b);
-		}
-		a = b;
-		b = c;
-	}
-}
-
 /* member functions */
 
 rsgen *rsgen::instance (const int prng_type = 1) {
+	static rsgen my_static_instance(prng_type);
 	if (my_instance == NULL) {
-		my_instance = new rsgen(prng_type);
+		my_instance = &my_static_instance;
 	}
 	return (my_instance);
 }
@@ -73,20 +46,32 @@ rsgen *rsgen::get_instance () {
 	return (my_instance);
 }
 
-int rsgen::next () {
-	int pseudorandom_number = 0;
+unsigned int rsgen::next () {
+	unsigned int pseudorandom_number = 0;
 	ssize_t read_retval = 0;
 	switch (prng_type) {
 		case 1 : /* Mersenne twister */
-			pseudorandom_number = mprng->
-				IRandomX(INT_MIN, INT_MAX);
+			pseudorandom_number = (unsigned int)
+				(mprng->BRandom());
 			break;
 		case 2 : /* the random() function */
-			pseudorandom_number = (int)(random());
+			/*
+			 * since random() generates only non-negative ints
+			 * as random numbers, we have to use it twice
+			 * in order to cover the entire range of unsigned int
+			 */
+			if (random() % 2 == 0) {
+				pseudorandom_number = (unsigned int)
+					(random());
+			} else {
+				pseudorandom_number = (unsigned int)
+					(random()) + ((unsigned int)(1) << 31);
+			}
 			break;
 		case 3 : /* the /dev/urandom system file */
 			read_retval = read(ufd,
-					&pseudorandom_number, sizeof (int));
+					&pseudorandom_number,
+					sizeof (unsigned int));
 			/*
 			 * we check whether the read
 			 * has encountered an error
@@ -202,9 +187,14 @@ int text_file_read_buffer (int fd,
 	} else if (read_retval == 0) {
 		(*bytes_read) = 0;
 		return (-1); /* partial success */
+	} else {
+		(*bytes_read) = (size_t)(read_retval);
+		if ((*bytes_read) < buffer_size) {
+			return (-1); /* partial success */
+		} else {
+			return (0); /* success */
+		}
 	}
-	(*bytes_read) = (size_t)(read_retval);
-	return (0); /* success */
 }
 
 /**
@@ -248,7 +238,7 @@ int convert_from_wbuffer (iconv_t *cd,
 	char *outbuf = output_buffer;
 	size_t inbytesleft = input_buffer_size * sizeof (wchar_t);
 	size_t outbytesleft = output_buffer_size;
-	size_t iconv_retval = iconv(cd, &inbuf, &inbytesleft,
+	size_t iconv_retval = iconv((*cd), &inbuf, &inbytesleft,
 			&outbuf, &outbytesleft);
 	/*
 	 * computing the number of bytes,
@@ -370,6 +360,69 @@ int add_character_occurrences(occurrences_map &occurrences,
 		 * How portable is this?
 		 */
 		++occurrences[wbuffer[i]];
+	}
+	return (0);
+}
+
+/**
+ * A function which fills the buffer of wide characters
+ * with a random wide characters contained in
+ * the provided probability_map pmap.
+ *
+ * @param
+ * wbuffer	the buffer of wide characters which will be used
+ * 		to store the randomly generated wide characters
+ * @param
+ * wbuffer_size	the desired number of wide characters
+ * 		to output into the provided wbuffer
+ * @param
+ * pmap		the probability_map according to which
+ * 		the random characters will be selected
+ * @param
+ * scale_factor	the number by which the generated random numbers
+ * 		have to be multiplied in order to fit in the desired scale
+ *
+ * @return	If the desired number of wide characters
+ * 		has been successfully output to the provided buffer
+ * 		of wide characters, this function returns zero.
+ * 		Otherwise, in case of any error,
+ * 		a positive error number is returned.
+ */
+int fill_output_wbuffer (wchar_t *wbuffer,
+		size_t wbuffer_size,
+		const probability_map &pmap,
+		double scale_factor) {
+	/* an iterator to the provided probability_map */
+	probability_map::const_iterator it = pmap.begin();
+	unsigned int pseudorandom_number = 0;
+	try {
+		for (size_t i = 0; i < wbuffer_size; ++i) {
+			/*
+			 * FIXME: we suppose that the total number
+			 * of input characters is not higher
+			 * than the UINT_MAX, roughly.
+			 */
+			pseudorandom_number =
+				(unsigned int)
+				(rsgen::get_instance()->next());
+			/*
+			 * rounding and enforcing
+			 * strictly positive integers
+			 */
+			pseudorandom_number = (unsigned int)
+				((double)(pseudorandom_number) *
+				scale_factor + 1.5);
+			it = pmap.lower_bound(pseudorandom_number);
+			if (it == pmap.end()) {
+				std::cerr << "pmap.lower_bound() "
+					"returned pmap.end()\n";
+				return (1);
+			}
+			wbuffer[i] = it->second;
+		}
+	} catch (...) {
+		std::cerr << "random character selection error!\n";
+		return (2);
 	}
 	return (0);
 }
