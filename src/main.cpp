@@ -95,7 +95,7 @@ int print_help (const char *argv0) {
 		"\t\tThe default PRNG is the Mersenne twister.\n"
 		"-i <file_encoding>\tSpecifies the character encoding\n"
 		"\t\t\tof either the input alphabet string\n"
-		"\t\t\tof the input file.\n"
+		"\t\t\tor the input file.\n"
 		"\t\t\tThe default value is UTF-8.\n"
 		"\t\t\tThe valid encodings are all those\n"
 		"\t\t\tsupported by the iconv.\n"
