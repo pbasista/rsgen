@@ -355,31 +355,31 @@ int main (int argc, char **argv) {
 	std::cout << "Random string generator (rsgen)" <<
 		std::endl << std::endl;
 	if (verbose_flag != 0) {
-		std::clog << "Selected pseudorandom number generator: ";
+		std::cout << "Selected pseudorandom number generator: ";
 		switch (prng_type) {
 			case 1 : /* Mersenne twister */
-				std::clog << "Mersenne twister\n";
+				std::cout << "Mersenne twister\n";
 				break;
 			case 2 : /* the random() function */
-				std::clog << "random() function\n";
+				std::cout << "random() function\n";
 				break;
 			case 3 : /* the /dev/urandom system file */
-				std::clog << "/dev/urandom system file\n";
+				std::cout << "/dev/urandom system file\n";
 				break;
 			default:
-				std::clog << "unknown (prng_type == " <<
+				std::cout << "unknown (prng_type == " <<
 					prng_type << ")\n";
 		}
-		std::clog << "Input character encoding: '" <<
+		std::cout << "Input character encoding: '" <<
 			input_encoding << "'\n";
-		std::clog << "Internal character encoding: '" <<
+		std::cout << "Internal character encoding: '" <<
 			internal_character_encoding << "'\n\n";
-		std::clog << "Size of wchar_t data type: " <<
+		std::cout << "Size of wchar_t data type: " <<
 			wchar_t_size << " bytes\n";
 	}
 	/* if the user supplied the alphabet string */
 	if (distribution_specification_type == 1) {
-		std::clog << "Reading the input alphabet.\n";
+		std::cout << "Reading the input alphabet.\n";
 		/* we create the desired conversion descriptor */
 		if ((cd = iconv_open(internal_character_encoding,
 					input_encoding)) == (iconv_t)(-1)) {
@@ -410,10 +410,10 @@ int main (int argc, char **argv) {
 			return (EXIT_FAILURE);
 		}
 		total_input_characters = characters_converted;
-		std::clog << "The input alphabet has been successfully read!\n";
+		std::cout << "The input alphabet has been successfully read!\n";
 	/* if the user supplied the size of the alphabet */
 	} else if (distribution_specification_type == 2) {
-		std::clog << "Generating the input alphabet of size " <<
+		std::cout << "Generating the input alphabet of size " <<
 			alphabet_size << ".\n";
 		try {
 			wbuffer = new wchar_t[alphabet_size];
@@ -435,11 +435,11 @@ int main (int argc, char **argv) {
 			return (EXIT_FAILURE);
 		}
 		total_input_characters = alphabet_size;
-		std::clog << "The input alphabet has been "
+		std::cout << "The input alphabet has been "
 			"successfully generated!\n";
 	/* if the user supplied the name of the input file */
 	} else if (distribution_specification_type == 3) {
-		std::clog << "Reading the input file '" <<
+		std::cout << "Reading the input file '" <<
 			input_filename << "'.\n";
 		/* we try to open the input file for reading */
 		ifd = open(input_filename, O_RDONLY);
@@ -502,7 +502,7 @@ int main (int argc, char **argv) {
 			perror("input_filename: close");
 			return (EXIT_FAILURE);
 		}
-		std::clog << "Input file has been successfully read!\n";
+		std::cout << "Input file has been successfully read!\n";
 	}
 	delete[] wbuffer;
 	cum_sum = 0;
@@ -520,7 +520,7 @@ int main (int argc, char **argv) {
 		return (EXIT_FAILURE);
 	}
 	if (verbose_flag != 0) {
-		std::clog << "Total alphabet size: " << pmap.size() << "\n";
+		std::cout << "Total alphabet size: " << pmap.size() << "\n";
 	}
 	/* initializing the pseudorandom number generator */
 	rsgen::instance(prng_type);
@@ -564,9 +564,9 @@ int main (int argc, char **argv) {
 	scale_factor = (double)(total_input_characters - 1) /
 		(double)(UINT_MAX);
 	/* here, we suppose that total_bytes_written == 0 */
-	std::clog << "\nGenerating the random file '" <<
+	std::cout << "\nGenerating the random file '" <<
 		output_filename << "'\n";
-	std::clog << "Output file encoding: '" <<
+	std::cout << "Output file encoding: '" <<
 		output_file_encoding << "'\n";
 	for (i = 0; i < write_count; ++i) {
 		if (fill_output_wbuffer(output_wbuffer, block_size,
@@ -601,7 +601,7 @@ int main (int argc, char **argv) {
 		}
 		total_bytes_written += bytes_to_write;
 	}
-	std::clog << "Successfully written " << output_length <<
+	std::cout << "Successfully written " << output_length <<
 		" characters (" << total_bytes_written << " bytes)\n";
 	delete[] output_buffer;
 	delete[] output_wbuffer;
