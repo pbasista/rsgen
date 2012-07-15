@@ -38,6 +38,7 @@ DEPEXT := .d
 LIBEXT := .so
 
 LIBDIR := $(LIBNAME)
+LIBDIRPATH := $$ORIGIN/$(LIBNAME)
 
 LIBHDRDIR := $(LIBDIR)/h
 LIBSRCDIR := $(LIBDIR)/src
@@ -68,7 +69,7 @@ XZ_UNAVAILABLE := $(shell hash xz 2>/dev/null || echo "COMMAND_UNAVAILABLE")
 # Kernel name as returned by "uname -s"
 KNAME := $(shell uname -s)
 
-LIBFLAGS := -L$(LIBDIR) -Wl,-rpath,$(LIBDIR)
+LIBFLAGS := -L$(LIBDIR) -Wl,-rpath,'$(LIBDIRPATH)'
 # If we are on the Mac OS, we would like to link with the iconv
 ifeq ($(KNAME),Darwin)
 LIBS := -l$(LIBNAME) -liconv
