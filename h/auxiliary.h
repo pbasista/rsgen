@@ -92,6 +92,7 @@ int convert_to_wbuffer (iconv_t *cd,
 		wchar_t *output_buffer,
 		size_t input_buffer_size,
 		size_t output_buffer_size,
+		size_t *unused_input_bytes,
 		size_t *written_characters);
 int add_character_occurrences(occurrences_map &occurrences,
 		wchar_t *wbuffer,

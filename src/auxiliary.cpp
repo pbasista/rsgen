@@ -31,6 +31,7 @@
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <iconv.h>
 #include <iostream>
@@ -291,14 +292,24 @@ int convert_from_wbuffer (iconv_t *cd,
  * @param
  * output_buffer_size	the number of characters in the output buffer
  * @param
+ * unused_input_bytes	Number of bytes which could not be converted
+ * 			to wide characters in this call to this function.
+ * 			They have been moved to the beginning
+ * 			of the input_buffer in order to be converted
+ * 			in the next call of this function.
+ * @param
  * written_characters	when this function returns, this variable will be set
  * 			to the number of characters, which has actually been
  * 			written to the specified output buffer
  *
  * @return	If the entire input buffer has been successfully converted,
  * 		this function returns zero.
+ * 		If there was an incomplete multi-byte sequence
+ * 		at the end of the input buffer, it is moved
+ * 		to the beginning of this buffer. Moreover, the number
+ * 		of unused input bytes is set and this function returns (-1).
  * 		If there was not enough space in the output_buffer,
- * 		this function returns (-1).
+ * 		this function returns (-2).
  * 		Otherwise, in case of any error,
  * 		a positive error number is returned.
  */
@@ -307,6 +318,7 @@ int convert_to_wbuffer (iconv_t *cd,
 		wchar_t *output_buffer,
 		size_t input_buffer_size,
 		size_t output_buffer_size,
+		size_t *unused_input_bytes,
 		size_t *written_characters) {
 	char *inbuf = input_buffer;
 	char *outbuf = (char *)(output_buffer);
@@ -316,6 +328,11 @@ int convert_to_wbuffer (iconv_t *cd,
 	size_t iconv_retval = iconv((*cd), &inbuf, &inbytesleft,
 			&outbuf, &outbytesleft);
 	/*
+	 * at the beginning, we suppose that
+	 * all the input bytes will be used
+	 */
+	(*unused_input_bytes) = 0;
+	/*
 	 * now we compute the number of characters,
 	 * which have just been written to the output_buffer
 	 */
@@ -323,15 +340,31 @@ int convert_to_wbuffer (iconv_t *cd,
 			outbytesleft) / sizeof (wchar_t);
 	/* if the iconv has encountered an error */
 	if ((iconv_retval == (size_t)(-1)) && (errno != E2BIG)) {
-		std::cerr << "iconv return value: " <<
-			iconv_retval << std::endl;
-		perror("convert_to_wbuffer: iconv");
-		return (1); /* failure */
+		if (errno == EINVAL) { /* not really an error */
+			/*
+			 * An incomplete multi-byte sequence
+			 * has been encountered at the end
+			 * of the input buffer. We move it
+			 * to the beginning of the input buffer
+			 * for later processing.
+			 */
+			memmove(input_buffer, inbuf, inbytesleft);
+			/* correcting the number of unused bytes */
+			(*unused_input_bytes) = inbytesleft;
+			/* resetting the errno */
+			errno = 0;
+			return (-1);
+		} else {
+			perror("convert_to_wbuffer: iconv");
+			/* resetting the errno */
+			errno = 0;
+			return (1);
+		}
 	/* if there was not enough space in the output_buffer */
 	} else if ((iconv_retval == (size_t)(-1)) && (errno == E2BIG)) {
 		/* resetting the errno */
 		errno = 0;
-		return (-1); /* partial success */
+		return (-2); /* partial success */
 	} else if (iconv_retval > 0) {
 		std::cerr << "convert_to_wbuffer: iconv "
 			"converted " << iconv_retval << " characters\n"

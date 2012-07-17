@@ -159,6 +159,11 @@ int main (int argc, char **argv) {
 	size_t last_block_characters = 0;
 	size_t total_input_characters = 0;
 	size_t total_bytes_written = 0;
+	/*
+	 * number of bytes unused in the last call
+	 * to the convert_to_wbuffer function
+	 */
+	size_t unused_input_bytes = 0;
 	char c = '\0';
 	char *endptr = NULL;
 	char *input_buffer = NULL;
@@ -276,14 +281,11 @@ int main (int argc, char **argv) {
 				break;
 			case 'v':
 				verbose_flag = 1;
-				//FIXME: Verbosity?
 				break;
 			case 'h':
 				print_help(argv[0]);
 				return (EXIT_SUCCESS);
 			case '?':
-				//FIXME: Remove print usage?
-//				print_usage(argv[0]);
 				return (EXIT_FAILURE);
 		}
 	}
@@ -395,6 +397,7 @@ int main (int argc, char **argv) {
 		}
 		if (convert_to_wbuffer(&cd, input_buffer, wbuffer,
 					input_buffer_size, wbuffer_size,
+					&unused_input_bytes,
 					&characters_converted) > 0) {
 			std::cerr << "Character conversion error!\n";
 			return (EXIT_FAILURE);
@@ -465,16 +468,17 @@ int main (int argc, char **argv) {
 		/* here, total_input_characters should be equal to 0 */
 		do {
 			if ((retval = text_file_read_buffer(ifd,
-							input_buffer,
-							input_buffer_size,
-							&bytes_read)) > 0) {
+					input_buffer + unused_input_bytes,
+					input_buffer_size - unused_input_bytes,
+					&bytes_read)) > 0) {
 				std::cerr <<
 					"Could not read the input file!\n";
 				return (EXIT_FAILURE);
 			}
 			if (convert_to_wbuffer(&cd, input_buffer, wbuffer,
-						bytes_read, wbuffer_size,
-						&characters_converted) > 0) {
+					bytes_read + unused_input_bytes,
+					wbuffer_size, &unused_input_bytes,
+					&characters_converted) > 0) {
 				std::cerr << "Character conversion error!\n";
 				return (EXIT_FAILURE);
 			}
@@ -491,6 +495,12 @@ int main (int argc, char **argv) {
 			std::cerr << "Error: The last call to the function\n"
 				"text_file_read_buffer"
 				" has not been successful.\n";
+			return (EXIT_FAILURE);
+		}
+		if (unused_input_bytes != (size_t)(0)) {
+			std::cerr << "Error: The last call to the function\n"
+				"convert_to_wbuffer"
+				" did not convert all the provided bytes.\n";
 			return (EXIT_FAILURE);
 		}
 		delete[] input_buffer;
