@@ -120,7 +120,7 @@ rsgen::rsgen (const int prng_type_arg = 1) : prng_type(prng_type_arg) {
 			ufd = open("/dev/urandom", O_RDONLY);
 			if (ufd == (-1)) {
 				perror("/dev/urandom: open");
-				throw /* FIXME WHAT? */;
+				throw my_exception();
 			}
 			break;
 		default :
